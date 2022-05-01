@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous" />
+    <title>Document</title>
+</head>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    var socket = io();
+</script>
+
+<body class="w-100" style="height: 100vh; padding: 2rem;">
+
+    <form id="nameform">
+        <label for="name">Nome</label>
+        <input type="text" id="name" name="name" />
+    </form>
+    <h1 id="waitMessage" style="display: none">In attesa di altri giocatori</h1>
+
+    <div class="modal fade" id="winnerModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1"
+        aria-labelledby="staticBackdropLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="winnerTitle">Ha vinto Jack!</h5>
+                </div>
+                <div class="modal-body">
+                    <p id="winnerDesc">testo in input</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-warning" id="next" onclick="goNext()">
+                        Avanti
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="h-100" id="main">
+        <h3 id="header">È il tuo turno!</h3>
+        <div class="">
+            <div class="container my-auto">
+                <div class="card m-auto" style="height: 50%;">
+                    <img src="https://blumagnolia.ch/wp-content/uploads/2021/05/placeholder-126.png" alt=""
+                        class="card-img-top" id="cardImg" />
+                    <div class="card-body">
+                        <div id="inputsdiv">
+                            <h5 class="card-title">Descrizioni</h5>
+                            <div id="inputslist">
+
+                            </div>
+
+                        </div>
+                        <form id="inputform">
+                            <label for="">Input</label>
+                            <input type="text" id="descriptioninput" />
+                        </form>
+                        <p id="inputtedText"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="d-flex mt-5" style="align-items: baseline;">
+            <h5 style="margin-right: 1rem;">Giocatori:</h5>
+            <p id="playerslist"></p>
+        </div>
+
+        <!-- <button class="btn btn-danger" id="next" onclick="socket.emit('new game')">
+            Nuova partita
+        </button> -->
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p"
+        crossorigin="anonymous"></script>
+
+    <script>
+        var myModal = new bootstrap.Modal(document.getElementById('winnerModal'), {
+            keyboard: false
+        });
+
+        if (window.localStorage.getItem("name")) {
+            document.querySelector("#nameform").style.display = "none";
+            fetch("/getState")
+                .then((res) => res.json())
+                .then((json) => {
+                    console.log(json);
+                    if (!json.players.includes(getName())) {
+                        window.localStorage.removeItem("name");
+                        location.reload();
+                    }
+                    if (json.players.length == 1) {
+                        showWaiting();
+                    } else {
+                        hideWaiting();
+                    }
+                    document.querySelector("#cardImg").setAttribute("src", "/getImage");
+                    showPlayers(json.players);
+                    showInputs(json.inputs);
+                    showGUI(json.turn);
+                });
+        } else {
+            document.querySelector("#main").style.display = "none";
+        }
+
+        document.querySelector("#nameform").addEventListener("submit", (e) => {
+            e.preventDefault();
+            let name = document.querySelector("#name").value;
+            socket.emit("new user", name);
+            window.localStorage.setItem("name", name);
+            document.querySelector("#nameform").style.display = "none";
+            document.querySelector("#main").style.display = "";
+        });
+
+        document.querySelector("#inputform").addEventListener("submit", (e) => {
+            e.preventDefault();
+            let description = document.querySelector("#descriptioninput").value;
+            document.querySelector("#descriptioninput").value = "";
+            document.querySelector("#inputtedText").textContent = description;
+            socket.emit("new input", { text: description, player: getName() });
+        });
+
+        socket.on("new user", (data) => {
+            console.log("new user: ", data);
+            if (data.length == 1) {
+                showWaiting();
+            } else {
+                hideWaiting();
+            }
+
+            document.querySelector("#playerslist").innerHTML = "";
+            showPlayers(data);
+        });
+
+        socket.on("new input", (data) => {
+            console.log(data);
+            document.querySelector("#inputslist").innerHTML = "";
+            showInputs(data);
+        });
+
+        socket.on("next turn", (data) => {
+            hideModal();
+            document.querySelector("#inputslist").innerHTML = "";
+            document.querySelector("#inputtedText").textContent = "";
+            console.log(data);
+            showGUI(data);
+        });
+
+        socket.on("new game", () => {
+            location.reload();
+        });
+
+        socket.on("round over", (winner, desc) => {
+            showModal(winner, desc);
+        })
+
+        function getName() {
+            return window.localStorage.getItem("name");
+        }
+
+        async function isMyTurn() {
+            const res = await fetch("/getTurn");
+            const currentPlayer = await res.json();
+            return currentPlayer ? currentPlayer.name == getName() : false;
+        }
+
+        function showPlayers(players) {
+            let string = "";
+            for (let name of players) {
+                if(name == getName()) {
+                    name = "<b>"+ name + "</b>"
+                }
+                string += name + ", ";
+
+            }
+            document.querySelector("#playerslist").innerHTML = string;
+
+        }
+
+        async function showInputs(inputs) {
+            played = false;
+            for (let desc of inputs) {
+                var item = document.createElement("div");
+                if (desc.player == getName()) {
+                    document.querySelector("#inputtedText").textContent = desc.text;
+                    played = true;
+                }
+                let showbutton = await isMyTurn();
+                item.innerHTML = `
+                <div class="row my-2 border-bottom border-light border-2 pb-1">
+                        <div class="col">
+                            ${desc.text}
+                        </div>
+                        <div class="col">
+                            ${showbutton
+                        ? `<button class='btn btn-success' onclick='win("${desc.player}", "${desc.text}")'>Scegli</button>`
+                        : ""
+                    }
+                        </div>
+                </div>
+            
+          `;
+                document.querySelector("#inputslist").appendChild(item);
+            }
+
+            if (played) {
+                document.querySelector("#inputform").style.display = "none";
+            }
+        }
+
+        function showGUI(turn) {
+            if (turn == getName()) { //your turn
+                document.querySelector("#next").style.display = "";
+                document.querySelector("#inputform").style.display = "none";
+                document.querySelector("#inputsdiv").style.display = "";
+                document.querySelector("#header").textContent = "È il tuo turno!";
+
+            } else {
+                document.querySelector("#next").style.display = "none";
+                document.querySelector("#inputform").style.display = "";
+                document.querySelector("#inputsdiv").style.display = "none";
+                document.querySelector("#header").textContent = "È il turno di " + turn;
+
+            }
+        }
+
+        function goNext() {
+            socket.emit("next turn");
+        }
+
+        function showWaiting() {
+            document.querySelector("#main").style.display = "none";
+            document.querySelector("#waitMessage").style.display = "";
+        }
+        function hideWaiting() {
+            document.querySelector("#main").style.display = "";
+            document.querySelector("#waitMessage").style.display = "none";
+        }
+
+        function win(player, desc) {
+            socket.emit("round over", player, desc);
+        }
+
+        function showModal(player, desc) {
+            document.getElementById('winnerTitle').textContent = player == getName() ? "Hai vinto!" : `Ha vinto ${player}!`
+            document.getElementById('winnerDesc').textContent = desc;
+            if (isMyTurn()) {
+                document.querySelector(".modal-footer").style.display = "";
+            } else {
+                document.querySelector(".modal-footer").style.display = "none";
+            }
+
+            myModal.show();
+        }
+
+        function hideModal() {
+            myModal.hide();
+        }
+    </script>
+</body>
+
+</html>
